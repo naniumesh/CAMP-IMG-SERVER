@@ -18,6 +18,10 @@ app.use(cors());
 
 app.use(express.json());
 
+/* =========================================
+   MULTER
+========================================= */
+
 const upload = multer({
 
     dest: "uploads/",
@@ -52,7 +56,7 @@ const FILE = path.join(
 );
 
 /* =========================================
-   READ JSON FILE SAFELY
+   READ JSON FILE
 ========================================= */
 
 function readData(){
@@ -148,8 +152,7 @@ app.post(
             readData();
 
             let imageUrl = "";
-
-            /* IMAGE */
+            let publicId = "";
 
             if(req.file){
 
@@ -160,6 +163,9 @@ app.post(
 
                 imageUrl =
                 result.secure_url;
+
+                publicId =
+                result.public_id;
             }
 
             const newStudent = {
@@ -167,7 +173,8 @@ app.post(
                 name,
                 batch,
                 rank,
-                image:imageUrl
+                image:imageUrl,
+                public_id: publicId
 
             };
 
@@ -189,7 +196,7 @@ app.post(
                 newStudent.camp = camp;
             }
 
-            /* CREATE CLASS IF NOT EXISTS */
+            /* CREATE CLASS */
 
             if(!data[className]){
 
@@ -213,6 +220,16 @@ app.post(
 
             console.log(error);
 
+            if(error.code === "LIMIT_FILE_SIZE"){
+
+                return res.status(400).json({
+
+                    error:
+                    "Image too large. Max 10MB allowed."
+
+                });
+            }
+
             res.status(500).json({
 
                 error:"Add Student Failed"
@@ -229,7 +246,7 @@ app.post(
 app.delete(
     "/delete-student/:className/:index",
 
-    (req,res)=>{
+    async(req,res)=>{
 
         try{
 
@@ -243,9 +260,7 @@ app.delete(
             const data =
             readData();
 
-            if(
-                !data[className]
-            ){
+            if(!data[className]){
 
                 return res.status(404).json({
 
@@ -253,6 +268,22 @@ app.delete(
 
                 });
             }
+
+            const student =
+            data[className][index];
+
+            /* DELETE CLOUDINARY IMAGE */
+
+            if(student.public_id){
+
+                await cloudinary.uploader.destroy(
+
+                    student.public_id
+
+                );
+            }
+
+            /* DELETE FROM JSON */
 
             data[className].splice(
                 index,
@@ -314,9 +345,7 @@ app.put(
             const data =
             readData();
 
-            if(
-                !data[className]
-            ){
+            if(!data[className]){
 
                 return res.status(404).json({
 
@@ -325,20 +354,44 @@ app.put(
                 });
             }
 
-            let imageUrl =
-            data[className][index].image;
+            const oldStudent =
+            data[className][index];
 
-            /* NEW IMAGE */
+            let imageUrl =
+            oldStudent.image;
+
+            let publicId =
+            oldStudent.public_id;
+
+            /* IF NEW IMAGE */
 
             if(req.file){
 
+                /* DELETE OLD IMAGE */
+
+                if(oldStudent.public_id){
+
+                    await cloudinary.uploader.destroy(
+
+                        oldStudent.public_id
+
+                    );
+                }
+
+                /* UPLOAD NEW IMAGE */
+
                 const result =
                 await cloudinary.uploader.upload(
+
                     req.file.path
+
                 );
 
                 imageUrl =
                 result.secure_url;
+
+                publicId =
+                result.public_id;
             }
 
             const updatedStudent = {
@@ -346,7 +399,8 @@ app.put(
                 name,
                 batch,
                 rank,
-                image:imageUrl
+                image:imageUrl,
+                public_id: publicId
 
             };
 
@@ -384,18 +438,23 @@ app.put(
 
         }catch(error){
 
-            console.log(err);
+            console.log(error);
 
-if(err.code === "LIMIT_FILE_SIZE"){
+            if(error.code === "LIMIT_FILE_SIZE"){
 
-    return res.status(400).json({
-        error:"Image too large. Max 10MB allowed."
-    });
-}
+                return res.status(400).json({
 
-res.status(500).json({
-    error:"Server Error"
-});
+                    error:
+                    "Image too large. Max 10MB allowed."
+
+                });
+            }
+
+            res.status(500).json({
+
+                error:"Update Failed"
+
+            });
         }
     }
 );

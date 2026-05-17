@@ -19,7 +19,13 @@ app.use(cors());
 app.use(express.json());
 
 const upload = multer({
-    dest: "uploads/"
+
+    dest: "uploads/",
+
+    limits: {
+        fileSize: 10 * 1024 * 1024
+    }
+
 });
 
 /* =========================================
@@ -378,13 +384,18 @@ app.put(
 
         }catch(error){
 
-            console.log(error);
+            console.log(err);
 
-            res.status(500).json({
+if(err.code === "LIMIT_FILE_SIZE"){
 
-                error:"Update Failed"
+    return res.status(400).json({
+        error:"Image too large. Max 10MB allowed."
+    });
+}
 
-            });
+res.status(500).json({
+    error:"Server Error"
+});
         }
     }
 );

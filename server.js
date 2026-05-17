@@ -1,3 +1,4 @@
+```js
 const express = require("express");
 
 const cors = require("cors");
@@ -8,6 +9,8 @@ const multer = require("multer");
 
 const cloudinary = require("cloudinary").v2;
 
+const path = require("path");
+
 require("dotenv").config();
 
 const app = express();
@@ -16,213 +19,391 @@ app.use(cors());
 
 app.use(express.json());
 
-const upload = multer({ dest: "uploads/" });
-
-cloudinary.config({
-    cloud_name: process.env.CLOUD_NAME,
-    api_key: process.env.API_KEY,
-    api_secret: process.env.API_SECRET
+const upload = multer({
+    dest: "uploads/"
 });
 
-const path = require("path");
+/* =========================================
+   CLOUDINARY
+========================================= */
+
+cloudinary.config({
+
+    cloud_name: process.env.CLOUD_NAME,
+
+    api_key: process.env.API_KEY,
+
+    api_secret: process.env.API_SECRET
+
+});
+
+/* =========================================
+   JSON FILE
+========================================= */
 
 const FILE = path.join(
     __dirname,
     "data/students.json"
 );
 
-app.get("/students", (req,res)=>{
+/* =========================================
+   READ JSON FILE SAFELY
+========================================= */
 
-    const data = fs.readFileSync(FILE);
-
-    res.json(JSON.parse(data));
-
-});
-
-app.post("/add-student",
-upload.single("image"),
-async(req,res)=>{
+function readData(){
 
     try{
 
-        const {
-            className,
-            name,
-            batch,
-            rank,
-            place,
-            camp
-        } = req.body;
+        if(!fs.existsSync(FILE)){
 
-        let imageUrl = "";
-
-        if(req.file){
-
-            const result =
-            await cloudinary.uploader.upload(
-                req.file.path
-            );
-
-            imageUrl = result.secure_url;
+            return {};
         }
 
         const raw =
-        fs.readFileSync(FILE);
+        fs.readFileSync(FILE,"utf8");
 
-        const data = JSON.parse(raw);
+        return JSON.parse(raw);
 
-        const newStudent = {
-            name,
-            batch,
-            rank,
-            image:imageUrl
-        };
+    }catch(error){
 
-        if(className === "1D"){
-            newStudent.place = place;
-        }
-
-        if(className === "SPECIAL"){
-            newStudent.camp = camp;
-        }
-
-        data[className].push(newStudent);
-
-        fs.writeFileSync(
-            FILE,
-            JSON.stringify(data,null,2)
+        console.log(
+            "JSON READ ERROR:",
+            error
         );
 
-        res.json({
-            message:"Student Added"
-        });
-
-    }catch(err){
-
-        console.log(err);
-
-        res.status(500).json({
-            error:"Server Error"
-        });
-
+        return {};
     }
+}
 
-});
+/* =========================================
+   WRITE JSON FILE
+========================================= */
 
-/* DELETE STUDENT */
-
-app.delete("/delete-student/:className/:index",
-(req,res)=>{
-
-    const { className, index } = req.params;
-
-    const raw = fs.readFileSync(FILE);
-
-    const data = JSON.parse(raw);
-
-    data[className].splice(index,1);
+function writeData(data){
 
     fs.writeFileSync(
+
         FILE,
+
         JSON.stringify(data,null,2)
+
     );
+}
 
-    res.json({
-        message:"Deleted Successfully"
-    });
+/* =========================================
+   GET STUDENTS
+========================================= */
 
-});
-
-
-/* EDIT STUDENT */
-
-app.put("/edit-student/:className/:index",
-upload.single("image"),
-async(req,res)=>{
+app.get("/students",(req,res)=>{
 
     try{
 
-        const {
-            className,
-            index
-        } = req.params;
-
-        const {
-            name,
-            batch,
-            rank,
-            place,
-            camp
-        } = req.body;
-
-        let imageUrl = "";
-
-        if(req.file){
-
-            const result =
-            await cloudinary.uploader.upload(
-                req.file.path
-            );
-
-            imageUrl = result.secure_url;
-        }
-
-        const raw =
-        fs.readFileSync(FILE);
-
         const data =
-        JSON.parse(raw);
+        readData();
 
-        const updatedStudent = {
+        res.json(data);
 
-            name,
-            batch,
-            rank,
-            image:imageUrl
-        };
+    }catch(error){
 
-        if(className === "1D"){
-
-            updatedStudent.place = place;
-        }
-
-        if(className === "SPECIAL"){
-
-            updatedStudent.camp = camp;
-        }
-
-        if(!imageUrl){
-
-            updatedStudent.image =
-            data[className][index].image;
-        }
-
-        data[className][index] =
-        updatedStudent;
-
-        fs.writeFileSync(
-            FILE,
-            JSON.stringify(data,null,2)
-        );
-
-        res.json({
-            message:"Updated Successfully"
-        });
-
-    }catch(err){
-
-        console.log(err);
+        console.log(error);
 
         res.status(500).json({
-            error:"Update Error"
+
+            error:"Failed To Load Students"
+
         });
-
     }
-
 });
 
-app.listen(5000, ()=>{
+/* =========================================
+   ADD STUDENT
+========================================= */
 
-    console.log("Server Running");
+app.post(
+    "/add-student",
+
+    upload.single("image"),
+
+    async(req,res)=>{
+
+        try{
+
+            const {
+
+                className,
+                name,
+                batch,
+                rank,
+                place,
+                camp
+
+            } = req.body;
+
+            const data =
+            readData();
+
+            let imageUrl = "";
+
+            /* IMAGE */
+
+            if(req.file){
+
+                const result =
+                await cloudinary.uploader.upload(
+                    req.file.path
+                );
+
+                imageUrl =
+                result.secure_url;
+            }
+
+            const newStudent = {
+
+                name,
+                batch,
+                rank,
+                image:imageUrl
+
+            };
+
+            /* EXTRA FIELDS */
+
+            if(
+                className ===
+                "YOUTH EXCHANGE PROGRAM"
+            ){
+
+                newStudent.place = place;
+            }
+
+            if(
+                className ===
+                "RARE CAMPS"
+            ){
+
+                newStudent.camp = camp;
+            }
+
+            /* CREATE CLASS IF NOT EXISTS */
+
+            if(!data[className]){
+
+                data[className] = [];
+            }
+
+            data[className].push(
+                newStudent
+            );
+
+            writeData(data);
+
+            res.json({
+
+                message:
+                "Student Added Successfully"
+
+            });
+
+        }catch(error){
+
+            console.log(error);
+
+            res.status(500).json({
+
+                error:"Add Student Failed"
+
+            });
+        }
+    }
+);
+
+/* =========================================
+   DELETE STUDENT
+========================================= */
+
+app.delete(
+    "/delete-student/:className/:index",
+
+    (req,res)=>{
+
+        try{
+
+            const {
+
+                className,
+                index
+
+            } = req.params;
+
+            const data =
+            readData();
+
+            if(
+                !data[className]
+            ){
+
+                return res.status(404).json({
+
+                    error:"Class Not Found"
+
+                });
+            }
+
+            data[className].splice(
+                index,
+                1
+            );
+
+            writeData(data);
+
+            res.json({
+
+                message:
+                "Deleted Successfully"
+
+            });
+
+        }catch(error){
+
+            console.log(error);
+
+            res.status(500).json({
+
+                error:"Delete Failed"
+
+            });
+        }
+    }
+);
+
+/* =========================================
+   EDIT STUDENT
+========================================= */
+
+app.put(
+    "/edit-student/:className/:index",
+
+    upload.single("image"),
+
+    async(req,res)=>{
+
+        try{
+
+            const {
+
+                className,
+                index
+
+            } = req.params;
+
+            const {
+
+                name,
+                batch,
+                rank,
+                place,
+                camp
+
+            } = req.body;
+
+            const data =
+            readData();
+
+            if(
+                !data[className]
+            ){
+
+                return res.status(404).json({
+
+                    error:"Class Not Found"
+
+                });
+            }
+
+            let imageUrl =
+            data[className][index].image;
+
+            /* NEW IMAGE */
+
+            if(req.file){
+
+                const result =
+                await cloudinary.uploader.upload(
+                    req.file.path
+                );
+
+                imageUrl =
+                result.secure_url;
+            }
+
+            const updatedStudent = {
+
+                name,
+                batch,
+                rank,
+                image:imageUrl
+
+            };
+
+            /* EXTRA FIELDS */
+
+            if(
+                className ===
+                "YOUTH EXCHANGE PROGRAM"
+            ){
+
+                updatedStudent.place =
+                place;
+            }
+
+            if(
+                className ===
+                "RARE CAMPS"
+            ){
+
+                updatedStudent.camp =
+                camp;
+            }
+
+            data[className][index] =
+            updatedStudent;
+
+            writeData(data);
+
+            res.json({
+
+                message:
+                "Updated Successfully"
+
+            });
+
+        }catch(error){
+
+            console.log(error);
+
+            res.status(500).json({
+
+                error:"Update Failed"
+
+            });
+        }
+    }
+);
+
+/* =========================================
+   SERVER
+========================================= */
+
+const PORT =
+process.env.PORT || 5000;
+
+app.listen(PORT,()=>{
+
+    console.log(
+
+        `Server Running On Port ${PORT}`
+
+    );
 
 });
+```

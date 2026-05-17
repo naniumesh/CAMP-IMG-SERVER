@@ -1,16 +1,25 @@
+const crypto = require("crypto");
+
+global.crypto = crypto;
+
 const express = require("express");
 
 const cors = require("cors");
 
-const fs = require("fs");
+const mongoose = require("mongoose");
 
 const multer = require("multer");
 
+const {
+    CloudinaryStorage
+} = require("multer-storage-cloudinary");
+
 const cloudinary = require("cloudinary").v2;
 
-const path = require("path");
-
 require("dotenv").config();
+
+const Student =
+require("./models/Student");
 
 const app = express();
 
@@ -19,17 +28,22 @@ app.use(cors());
 app.use(express.json());
 
 /* =========================================
-   MULTER
+   MONGODB CONNECTION
 ========================================= */
 
-const upload = multer({
+mongoose.connect(
 
-    dest: "uploads/",
+    process.env.MONGO_URI
 
-    limits: {
-        fileSize: 10 * 1024 * 1024
-    }
+).then(()=>{
 
+    console.log(
+        "MongoDB Connected"
+    );
+
+}).catch((error)=>{
+
+    console.log(error);
 });
 
 /* =========================================
@@ -38,79 +52,82 @@ const upload = multer({
 
 cloudinary.config({
 
-    cloud_name: process.env.CLOUD_NAME,
+    cloud_name:
+    process.env.CLOUD_NAME,
 
-    api_key: process.env.API_KEY,
+    api_key:
+    process.env.API_KEY,
 
-    api_secret: process.env.API_SECRET
-
+    api_secret:
+    process.env.API_SECRET
 });
 
 /* =========================================
-   JSON FILE
+   CLOUDINARY STORAGE
 ========================================= */
 
-const FILE = path.join(
-    __dirname,
-    "data/students.json"
-);
+const storage =
+new CloudinaryStorage({
 
-/* =========================================
-   READ JSON FILE
-========================================= */
+    cloudinary: cloudinary,
 
-function readData(){
+    params: {
 
-    try{
+        folder:"camp-students",
 
-        if(!fs.existsSync(FILE)){
-
-            return {};
-        }
-
-        const raw =
-        fs.readFileSync(FILE,"utf8");
-
-        return JSON.parse(raw);
-
-    }catch(error){
-
-        console.log(
-            "JSON READ ERROR:",
-            error
-        );
-
-        return {};
+        allowed_formats:[
+            "jpg",
+            "jpeg",
+            "png",
+            "webp"
+        ]
     }
-}
+});
 
-/* =========================================
-   WRITE JSON FILE
-========================================= */
+const upload =
+multer({
 
-function writeData(data){
+    storage,
 
-    fs.writeFileSync(
+    limits:{
 
-        FILE,
-
-        JSON.stringify(data,null,2)
-
-    );
-}
+        fileSize:
+        20 * 1024 * 1024
+    }
+});
 
 /* =========================================
    GET STUDENTS
 ========================================= */
 
-app.get("/students",(req,res)=>{
+app.get("/students",async(req,res)=>{
 
     try{
 
-        const data =
-        readData();
+        const students =
+        await Student.find();
 
-        res.json(data);
+        const grouped = {
+
+            "REPUBLIC DAY CAMP":[],
+            "TSC, VSC, NSC":[],
+            "IMA ATTACHMENT CAMP":[],
+            "YOUTH EXCHANGE PROGRAM":[],
+            "RARE CAMPS":[]
+
+        };
+
+        students.forEach(student=>{
+
+            if(grouped[student.className]){
+
+                grouped[
+                    student.className
+                ].push(student);
+            }
+        });
+
+        res.json(grouped);
 
     }catch(error){
 
@@ -118,8 +135,8 @@ app.get("/students",(req,res)=>{
 
         res.status(500).json({
 
-            error:"Failed To Load Students"
-
+            error:
+            "Failed To Load Students"
         });
     }
 });
@@ -129,6 +146,7 @@ app.get("/students",(req,res)=>{
 ========================================= */
 
 app.post(
+
     "/add-student",
 
     upload.single("image"),
@@ -148,92 +166,64 @@ app.post(
 
             } = req.body;
 
-            const data =
-            readData();
+            if(!req.file){
 
-            let imageUrl = "";
-            let publicId = "";
+                return res.status(400).json({
 
-            if(req.file){
-
-                const result =
-                await cloudinary.uploader.upload(
-                    req.file.path
-                );
-
-                imageUrl =
-                result.secure_url;
-
-                publicId =
-                result.public_id;
+                    error:
+                    "Image Required"
+                });
             }
 
-            const newStudent = {
+            const newStudent =
+            new Student({
 
+                className,
                 name,
                 batch,
                 rank,
-                image:imageUrl,
-                public_id: publicId
 
-            };
+                image:
+                req.file.path,
 
-            /* EXTRA FIELDS */
+                public_id:
+                req.file.filename,
 
-            if(
-                className ===
-                "YOUTH EXCHANGE PROGRAM"
-            ){
+                place:
+                place || "",
 
-                newStudent.place = place;
-            }
+                camp:
+                camp || ""
+            });
 
-            if(
-                className ===
-                "RARE CAMPS"
-            ){
-
-                newStudent.camp = camp;
-            }
-
-            /* CREATE CLASS */
-
-            if(!data[className]){
-
-                data[className] = [];
-            }
-
-            data[className].push(
-                newStudent
-            );
-
-            writeData(data);
+            await newStudent.save();
 
             res.json({
 
                 message:
                 "Student Added Successfully"
-
             });
 
         }catch(error){
 
             console.log(error);
 
-            if(error.code === "LIMIT_FILE_SIZE"){
+            if(
+                error.code ===
+                "LIMIT_FILE_SIZE"
+            ){
 
                 return res.status(400).json({
 
                     error:
-                    "Image too large. Max 10MB allowed."
-
+                    "Image too large. Max 20MB allowed."
                 });
             }
 
             res.status(500).json({
 
-                error:"Add Student Failed"
-
+                error:
+                "Add Student Failed"
             });
         }
     }
@@ -244,59 +234,50 @@ app.post(
 ========================================= */
 
 app.delete(
-    "/delete-student/:className/:index",
+
+    "/delete-student/:id",
 
     async(req,res)=>{
 
         try{
 
-            const {
+            const student =
+            await Student.findById(
+                req.params.id
+            );
 
-                className,
-                index
-
-            } = req.params;
-
-            const data =
-            readData();
-
-            if(!data[className]){
+            if(!student){
 
                 return res.status(404).json({
 
-                    error:"Class Not Found"
-
+                    error:
+                    "Student Not Found"
                 });
             }
-
-            const student =
-            data[className][index];
 
             /* DELETE CLOUDINARY IMAGE */
 
             if(student.public_id){
 
                 await cloudinary.uploader.destroy(
-
-                    student.public_id
-
+                    student.public_id,
+                    {
+                        resource_type:"image"
+                    }
                 );
             }
 
-            /* DELETE FROM JSON */
+            /* DELETE DATABASE */
 
-            data[className].splice(
-                index,
-                1
+            await Student.findByIdAndDelete(
+
+                req.params.id
             );
-
-            writeData(data);
 
             res.json({
 
                 message:
                 "Deleted Successfully"
-
             });
 
         }catch(error){
@@ -305,19 +286,20 @@ app.delete(
 
             res.status(500).json({
 
-                error:"Delete Failed"
-
+                error:
+                "Delete Failed"
             });
         }
     }
 );
 
 /* =========================================
-   EDIT STUDENT
+   UPDATE STUDENT
 ========================================= */
 
 app.put(
-    "/edit-student/:className/:index",
+
+    "/edit-student/:id",
 
     upload.single("image"),
 
@@ -325,135 +307,86 @@ app.put(
 
         try{
 
-            const {
+            const student =
+            await Student.findById(
+                req.params.id
+            );
 
-                className,
-                index
-
-            } = req.params;
-
-            const {
-
-                name,
-                batch,
-                rank,
-                place,
-                camp
-
-            } = req.body;
-
-            const data =
-            readData();
-
-            if(!data[className]){
+            if(!student){
 
                 return res.status(404).json({
 
-                    error:"Class Not Found"
-
+                    error:
+                    "Student Not Found"
                 });
             }
 
-            const oldStudent =
-            data[className][index];
+            let image =
+            student.image;
 
-            let imageUrl =
-            oldStudent.image;
+            let public_id =
+            student.public_id;
 
-            let publicId =
-            oldStudent.public_id;
-
-            /* IF NEW IMAGE */
+            /* NEW IMAGE */
 
             if(req.file){
 
                 /* DELETE OLD IMAGE */
 
-                if(oldStudent.public_id){
+                if(student.public_id){
 
                     await cloudinary.uploader.destroy(
-
-                        oldStudent.public_id
-
+                        student.public_id,
+                        {
+                            resource_type:"image"
+                        }
                     );
                 }
 
-                /* UPLOAD NEW IMAGE */
+                image =
+                req.file.path;
 
-                const result =
-                await cloudinary.uploader.upload(
-
-                    req.file.path
-
-                );
-
-                imageUrl =
-                result.secure_url;
-
-                publicId =
-                result.public_id;
+                public_id =
+                req.file.filename;
             }
 
-            const updatedStudent = {
+            student.name =
+            req.body.name;
 
-                name,
-                batch,
-                rank,
-                image:imageUrl,
-                public_id: publicId
+            student.batch =
+            req.body.batch;
 
-            };
+            student.rank =
+            req.body.rank;
 
-            /* EXTRA FIELDS */
+            student.place =
+            req.body.place || "";
 
-            if(
-                className ===
-                "YOUTH EXCHANGE PROGRAM"
-            ){
+            student.camp =
+            req.body.camp || "";
 
-                updatedStudent.place =
-                place;
-            }
+            student.image =
+            image;
 
-            if(
-                className ===
-                "RARE CAMPS"
-            ){
+            student.public_id =
+            public_id;
 
-                updatedStudent.camp =
-                camp;
-            }
-
-            data[className][index] =
-            updatedStudent;
-
-            writeData(data);
+            await student.save();
 
             res.json({
 
                 message:
                 "Updated Successfully"
-
             });
 
         }catch(error){
 
             console.log(error);
 
-            if(error.code === "LIMIT_FILE_SIZE"){
-
-                return res.status(400).json({
-
-                    error:
-                    "Image too large. Max 10MB allowed."
-
-                });
-            }
-
             res.status(500).json({
 
-                error:"Update Failed"
-
+                error:
+                "Update Failed"
             });
         }
     }
@@ -471,7 +404,5 @@ app.listen(PORT,()=>{
     console.log(
 
         `Server Running On Port ${PORT}`
-
     );
-
 });

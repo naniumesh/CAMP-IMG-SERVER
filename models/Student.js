@@ -16,7 +16,9 @@ const studentSchema = new mongoose.Schema({
 
     place:String,
 
-    camp:String
+    camp:String,
+
+    subCamp:String
 
 });
 

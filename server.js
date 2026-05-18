@@ -212,18 +212,6 @@ app.post(
 
             console.log(error);
 
-            if(
-                error.code ===
-                "LIMIT_FILE_SIZE"
-            ){
-
-                return res.status(400).json({
-
-                    error:
-                    "Image too large. Max 20MB allowed."
-                });
-            }
-
             res.status(500).json({
 
                 error:
@@ -259,8 +247,6 @@ app.delete(
                 });
             }
 
-            /* DELETE CLOUDINARY IMAGE */
-
             if(student.public_id){
 
                 await cloudinary.uploader.destroy(
@@ -270,8 +256,6 @@ app.delete(
                     }
                 );
             }
-
-            /* DELETE DATABASE */
 
             await Student.findByIdAndDelete(
 
@@ -331,11 +315,7 @@ app.put(
             let public_id =
             student.public_id;
 
-            /* NEW IMAGE */
-
             if(req.file){
-
-                /* DELETE OLD IMAGE */
 
                 if(student.public_id){
 
@@ -398,6 +378,33 @@ app.put(
         }
     }
 );
+
+/* =========================================
+   MULTER ERROR HANDLER
+========================================= */
+
+app.use((error, req, res, next) => {
+
+    if(error instanceof multer.MulterError){
+
+        if(error.code === "LIMIT_FILE_SIZE"){
+
+            return res.status(400).json({
+
+                error:
+                "IMAGE SIZE TOO LARGE. MAXIMUM 20MB ALLOWED."
+            });
+        }
+    }
+
+    console.log(error);
+
+    res.status(500).json({
+
+        error:
+        "SERVER ERROR"
+    });
+});
 
 /* =========================================
    SERVER

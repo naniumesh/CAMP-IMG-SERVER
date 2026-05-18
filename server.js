@@ -162,7 +162,8 @@ app.post(
                 batch,
                 rank,
                 place,
-                camp
+                camp,
+                subCamp
 
             } = req.body;
 
@@ -193,7 +194,10 @@ app.post(
                 place || "",
 
                 camp:
-                camp || ""
+                camp || "",
+
+                subCamp:
+                subCamp || ""
             });
 
             await newStudent.save();
@@ -364,6 +368,9 @@ app.put(
 
             student.camp =
             req.body.camp || "";
+
+            student.subCamp =
+            req.body.subCamp || "";
 
             student.image =
             image;
